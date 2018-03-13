@@ -3,11 +3,14 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io/ioutil"
+	"log"
 	"os"
+	"time"
 )
 
 var (
-	Time      int
+	Minute    int
 	Directory string
 )
 
@@ -17,14 +20,31 @@ func main() {
 		flag.PrintDefaults()
 	}
 
-	flag.IntVar(&Time, "t", 0, "Enter minute (required)")
+	flag.IntVar(&Minute, "t", 0, "Enter minute (required)")
 	flag.StringVar(&Directory, "d", "", "Enter directory full path (required)")
 	flag.Parse()
 
-	if Time == 0 && Directory == "" {
+	if Minute == 0 && Directory == "" {
 		Usage()
 		os.Exit(1)
 	}
 
-	fmt.Printf("Time : %d and Directory : %s", Time, Directory)
+	now := time.Now()
+
+	timeLimit := now.Add(time.Duration(-1*Minute) * time.Minute)
+
+	fmt.Printf("Minute : %d and Directory : %s\n", Minute, Directory)
+	fmt.Println("Now :", now)
+	fmt.Println("Limit :", timeLimit)
+
+	files, err := ioutil.ReadDir(Directory)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for _, file := range files {
+		if !file.ModTime().Before(timeLimit) {
+			fmt.Println(file.Name(), file.ModTime())
+		}
+	}
 }

@@ -1,17 +1,19 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
-	"io/ioutil"
-	"log"
 	"os"
 	"time"
+
+	"github.com/mistikel/analytics/files"
 )
 
 var (
 	Minute    int
 	Directory string
+	Huge      bool
 )
 
 func main() {
@@ -22,6 +24,7 @@ func main() {
 
 	flag.IntVar(&Minute, "t", 0, "Enter minute (required)")
 	flag.StringVar(&Directory, "d", "", "Enter directory full path (required)")
+	flag.BoolVar(&Huge, "b", false, "Use this if you want process big directory (optional)")
 	flag.Parse()
 
 	if Minute == 0 && Directory == "" {
@@ -29,22 +32,22 @@ func main() {
 		os.Exit(1)
 	}
 
-	now := time.Now()
+	ctx := context.Background()
+	run(ctx)
+}
 
+func run(ctx context.Context) {
+	now := time.Now()
 	timeLimit := now.Add(time.Duration(-1*Minute) * time.Minute)
 
-	fmt.Printf("Minute : %d and Directory : %s\n", Minute, Directory)
-	fmt.Println("Now :", now)
-	fmt.Println("Limit :", timeLimit)
+	fileModule := files.NewFilesModule()
 
-	files, err := ioutil.ReadDir(Directory)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	for _, file := range files {
-		if !file.ModTime().Before(timeLimit) {
-			fmt.Println(file.Name(), file.ModTime())
-		}
+	if Huge {
+		number := fileModule.GetApproximateFile(ctx, Directory, timeLimit)
+		fmt.Println(number)
+	} else {
+		files := fileModule.ReadDirectory(ctx, Directory)
+		path := Directory + files[0].Name()
+		fileModule.ReadFile(ctx, path)
 	}
 }

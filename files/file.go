@@ -1,6 +1,7 @@
 package files
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"os"
@@ -12,65 +13,23 @@ type chunk struct {
 	offset  int64
 }
 
-func (filesModule *FilesModule) ReadFile(ctx context.Context, path string) {
-	const BufferSize = 89
+// ReadFile return nil or error
+// Read single file line by line
+func (filesModule *FilesModule) ReadFile(ctx context.Context, path string, wg *sync.WaitGroup) {
 	file, err := os.Open(path)
 	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	defer file.Close()
-
-	fileinfo, err := file.Stat()
-	if err != nil {
-		fmt.Println(err)
+		fmt.Println("Can not find file: ", path)
 		return
 	}
 
-	filesize := int(fileinfo.Size())
-	// Number of go routines we need to spawn.
-	concurrency := filesize / BufferSize
-	// buffer sizes that each of the go routine below should use. ReadAt
-	// returns an error if the buffer size is larger than the bytes returned
-	// from the file.
-	chunksizes := make([]chunk, concurrency)
+	defer wg.Done()
 
-	// All buffer sizes are the same in the normal case. Offsets depend on the
-	// index. Second go routine should start at 100, for example, given our
-	// buffer size of 100.
-	for i := 0; i < concurrency; i++ {
-		chunksizes[i].bufsize = BufferSize
-		chunksizes[i].offset = int64(BufferSize * i)
+	reader := bufio.NewReader(file)
+
+	text, _, err := reader.ReadLine()
+	for err == nil {
+
+		fmt.Println(file.Name(), string(text))
+		text, _, err = reader.ReadLine()
 	}
-
-	// check for any left over bytes. Add the residual number of bytes as the
-	// the last chunk size.
-	if remainder := filesize % BufferSize; remainder != 0 {
-		c := chunk{bufsize: remainder, offset: int64(concurrency * BufferSize)}
-		concurrency++
-		chunksizes = append(chunksizes, c)
-	}
-
-	var wg sync.WaitGroup
-	wg.Add(concurrency)
-
-	for i := 0; i < concurrency; i++ {
-		go func(chunksizes []chunk, i int) {
-			defer wg.Done()
-
-			chunk := chunksizes[i]
-			buffer := make([]byte, chunk.bufsize)
-			file.ReadAt(buffer, chunk.offset)
-
-			if err != nil {
-				fmt.Println(err)
-				return
-			}
-
-			// fmt.Println("bytes read, string(bytestream): ", bytesread)
-			fmt.Println(string(buffer))
-		}(chunksizes, i)
-	}
-
-	wg.Wait()
 }

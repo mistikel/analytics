@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/mistikel/analytics/files"
@@ -14,6 +15,7 @@ var (
 	Minute    int
 	Directory string
 	Huge      bool
+	wg        sync.WaitGroup
 )
 
 func main() {
@@ -46,8 +48,22 @@ func run(ctx context.Context) {
 		number := fileModule.GetApproximateFile(ctx, Directory, timeLimit)
 		fmt.Println(number)
 	} else {
+		fmt.Println("Reading logs .....")
 		files := fileModule.ReadDirectory(ctx, Directory)
-		path := Directory + files[0].Name()
-		fileModule.ReadFile(ctx, path)
+
+		var path string
+		for _, file := range files {
+			if file.ModTime().Before(timeLimit) {
+				break
+			}
+			wg.Add(1)
+			path = Directory + file.Name()
+
+			// go concurrent
+			go fileModule.ReadFile(ctx, path, &wg)
+
+		}
 	}
+
+	wg.Wait()
 }

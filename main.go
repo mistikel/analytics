@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -12,7 +13,7 @@ import (
 )
 
 var (
-	Minute    int
+	Minute    string
 	Directory string
 	Huge      bool
 	wg        sync.WaitGroup
@@ -20,16 +21,16 @@ var (
 
 func main() {
 	var Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s[analytics]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s [analytics -t <mins>m -d <dir>]\n", os.Args[0])
 		flag.PrintDefaults()
 	}
 
-	flag.IntVar(&Minute, "t", 0, "Enter minute (required)")
-	flag.StringVar(&Directory, "d", "", "Enter directory full path (required)")
+	flag.StringVar(&Minute, "t", "0", "Enter minute followed with 'm' (required)")
+	flag.StringVar(&Directory, "d", "", "Enter directory full path ended with '/' (required)")
 	flag.BoolVar(&Huge, "b", false, "Use this if you want process big directory (optional)")
 	flag.Parse()
 
-	if Minute == 0 && Directory == "" {
+	if Minute == "0" && Directory == "" {
 		Usage()
 		os.Exit(1)
 	}
@@ -39,19 +40,47 @@ func main() {
 }
 
 func run(ctx context.Context) {
-	now := time.Now()
-	timeLimit := now.Add(time.Duration(-1*Minute) * time.Minute)
+	now := time.Now().UTC()
+	val, err := strconv.Atoi(Minute)
+	if end := len(Minute) - 1; end >= 0 && Minute[end] == 'm' && err != nil {
+		val, err = strconv.Atoi(Minute[:end])
+
+		if err != nil {
+			fmt.Println("Minutes not recognize")
+			return
+		}
+	}
+
+	timeLimit := now.Add(time.Duration(-1*val) * time.Minute)
 
 	fileModule := files.NewFilesModule()
 
-	if Huge {
-		number := fileModule.GetApproximateFile(ctx, Directory, timeLimit)
-		fmt.Println(number)
-	} else {
-		fmt.Println("Reading logs .....")
-		files := fileModule.ReadDirectory(ctx, Directory)
+	var path string
 
-		var path string
+	if Huge {
+		number, err := fileModule.GetApproximateFile(ctx, Directory, timeLimit)
+		if err != nil {
+			return
+		}
+
+		for number > 0 {
+			if number > 9 {
+				path = "http-" + strconv.Itoa(number) + ".log"
+			} else {
+				path = "http-0" + strconv.Itoa(number) + ".log"
+			}
+
+			wg.Add(1)
+
+			// go concurrent
+			go fileModule.ReadFile(ctx, path, timeLimit, &wg)
+		}
+	} else {
+		files, err := fileModule.ReadDirectory(ctx, Directory)
+		if err != nil {
+			return
+		}
+
 		for _, file := range files {
 			if file.ModTime().Before(timeLimit) {
 				break
@@ -60,7 +89,7 @@ func run(ctx context.Context) {
 			path = Directory + file.Name()
 
 			// go concurrent
-			go fileModule.ReadFile(ctx, path, &wg)
+			go fileModule.ReadFile(ctx, path, timeLimit, &wg)
 
 		}
 	}
